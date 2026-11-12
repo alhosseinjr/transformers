@@ -392,10 +392,16 @@ def _uses_megamoe(experts: nn.Module) -> bool:
 
 class AutoEP(EPImplementation):
     """
-    The default: `MegaMoeEP` for Mega MoE experts. Otherwise `AllReduceEP` at inference (gradients disabled) when the EP
-    group shares one batch, and token dispatch in training and wherever the ranks hold different batches. Token
-    dispatch runs `DeepEP` where DeepEP runs (see `is_deepep_loadable`), and `AllToAllEP` otherwise. At inference, the
-    all-reduce and DeepEP never read split sizes back to the host under capture, so decode captures in a CUDA graph.
+    The default. It runs, in order:
+
+    - `MegaMoeEP` for Mega MoE experts, which only run through it.
+    - `AllReduceEP` at inference (gradients disabled) when the EP group shares one batch.
+    - `DeepEP` otherwise (in training, and wherever the ranks hold different batches), where DeepEP runs (see
+      `is_deepep_loadable`).
+    - `AllToAllEP` in the same cases where DeepEP does not run.
+
+    The all-reduce, and DeepEP under capture, never read split sizes back to the host, so decode captures in a CUDA
+    graph.
     """
 
     def __init__(self, experts: nn.Module, ep_mesh: DeviceMesh, tp_mesh: DeviceMesh):
