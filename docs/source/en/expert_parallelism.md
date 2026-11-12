@@ -46,7 +46,7 @@ Each MoE model defines two plans in its config: `base_model_tp_plan` for the den
 
 ### Choosing an implementation
 
-`"ep_dispatch_experts"` shards the experts once and picks how tokens reach them from `EpDispatchExpertsParallel.ep_implementations`, selected with `ep_implementation` in [`DistributedConfig`]:
+`"ep_dispatch_experts"` shards the experts once and picks how tokens reach them from the implementations registered in `EPImplementationInterface`, selected with `ep_implementation` in [`DistributedConfig`]:
 
 | `ep_implementation` | advantages | disadvantages |
 | :--- | :--- | :--- |
@@ -54,28 +54,30 @@ Each MoE model defines two plans in its config: `base_model_tp_plan` for the den
 | `"all_reduce"` | No tokens move and no host sync, so decode captures in a CUDA graph. | Requires `ep_size=tp_size`. Every rank runs its experts over the whole batch, so its cost grows with the batch. |
 | `"deepgemm_megamoe"` | DeepGEMM Mega MoE fuses the dispatch, the experts and the combine in one kernel. Every layer of an EP group shares its symmetric-memory buffers. | Requires `ep_size=tp_size`, and FP8 activations with FP4 experts on SM100+. Inference only. |
 | `"deepep"` | [DeepEP](https://github.com/deepseek-ai/DeepEP)'s dispatch and combine, from [kernels-community/deep-ep](https://huggingface.co/kernels-community/deep-ep). Works for any layout. Under CUDA graph capture or `torch.compile`, it runs on worst-case-sized rows with no host sync, so decode captures in a CUDA graph. | Needs compute capability 9.0 or newer, NCCL 2.32.3 or newer, a CUDA toolkit 13.1 or newer (`nvcc`) at runtime, and a hidden size that is a multiple of 256. Eagerly, it reads the received counts back to the host. |
-| `"auto"`, the default | Runs `"all_reduce"` at inference when the ranks of an expert group share one batch. Otherwise it dispatches tokens with `"deepep"` where DeepEP runs, and `"all_to_all"` elsewhere. | |
+| `"auto"`, the default | Runs `"all_reduce"` at inference when the ranks of an expert group share one batch. Otherwise it dispatches tokens with `"deepep"` where DeepEP runs, and `"all_to_all"` elsewhere. | Not always the fastest choice: a workload can benefit from a custom implementation, see [Adding an implementation](#adding-an-implementation). |
 
-`ep_implementation` only chooses within the parallel sizes set in [`DistributedConfig`]. When the ranks of an expert group hold different batches, for example `tp_size=1` with `fsdp_size=ep_size`, `"all_to_all"` and `"deepep"` apply.
+> [!NOTE]
+> `ep_implementation` only chooses within the parallel sizes set in [`DistributedConfig`]. When the ranks of an expert group hold different batches, for example `tp_size=1` with `fsdp_size=ep_size`, `"all_to_all"` and `"deepep"` apply.
 
 ### Adding an implementation
 
-An implementation subclasses `EPImplementation` and registers under the name `ep_implementation` selects. It is built once per experts module, so it can keep state such as communication buffers. Calling it with the batch this rank holds, with global expert ids, returns the weighted expert output for each of its tokens. It runs this rank's experts with `run_experts`, on the rows, local expert ids and weights it brought them.
+An implementation subclasses `EPImplementation` and registers under the name `ep_implementation` selects. It is built once per experts module, so it can keep state such as communication buffers. Calling it with the batch this rank holds, with global expert ids, returns the weighted expert output for each of its tokens. It runs this rank's experts with `experts_forward`, on the rows, local expert ids and weights it brought them.
 
 ```py
-from transformers.distributed.expert_parallel import EpDispatchExpertsParallel, EPImplementation
+from transformers.distributed.expert_parallel import EPImplementation, EPImplementationInterface
 
 class MyEP(EPImplementation):
     def __call__(self, hidden_states, top_k_index, top_k_weights):
         tokens, expert_ids, weights = ...  # bring this rank's experts the rows routed to them
-        expert_output = self.run_experts(tokens, expert_ids, weights)
+        expert_output = self.experts_forward(tokens, expert_ids, weights)
         return ...  # the weighted expert output for each token of the batch this rank holds
 
-EpDispatchExpertsParallel.ep_implementations["my_ep"] = MyEP
+EPImplementationInterface.register("my_ep", MyEP)
 distributed_config = DistributedConfig(tp_size=1, fsdp_size=8, ep_size=8, ep_implementation="my_ep")
 ```
 
-Gradients must reach every rank that holds a token, routing weights included, so wrap a collective that autograd does not differentiate in a `torch.autograd.Function`.
+> [!NOTE]
+> Gradients must reach every rank that holds a token, routing weights included, so wrap a collective that autograd does not differentiate in a `torch.autograd.Function`.
 
 > [!TIP]
 > `enable_expert_parallel=True` without `ep_size` is deprecated and emits a `FutureWarning`. It shards only the experts, like `ep_size=tp_size, tp_plan={}`.
