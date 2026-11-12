@@ -164,8 +164,7 @@ class TestTensorParallelProperties(TestCasePlus):
 
     @parameterized.expand([("ep_router", "model.layers.*.mlp.gate"), ("moe_tp_experts", "model.layers.*.mlp.experts")])
     def test_legacy_masked_ep_plan_is_refused(self, style, module):
-        """The old masked EP plan (`ep_router` with `moe_tp_experts` in `ep_plan`) raises with the migration, instead of
-        leaving the experts unsharded."""
+        """A legacy masked EP plan raises instead of leaving the experts unsharded."""
         from transformers import MixtralConfig, MixtralForCausalLM
 
         config = MixtralConfig(
