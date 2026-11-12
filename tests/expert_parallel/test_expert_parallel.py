@@ -338,7 +338,7 @@ def _deepep_matches_one_process(rank):
     expected.backward(grad_output)
 
     mesh = init_device_mesh("cuda", (2,))
-    # each rank its own size-1 TP group, for the ranks holding different batches
+    # size-1 TP groups, for ranks holding their own batches
     single = init_device_mesh("cuda", (2, 1), mesh_dim_names=("ep", "tp"))["tp"]
     dispatched = []
     deepep_dispatch = DeepEP._dispatch_tokens
