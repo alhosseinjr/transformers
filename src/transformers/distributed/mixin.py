@@ -268,6 +268,13 @@ class DistributedMixin:
                 "The `ep_router` style was removed. Name the experts `ep_dispatch_experts` and drop the router rule. "
                 '`DistributedConfig(ep_implementation="all_reduce")` gives the same masking and all-reduce.'
             )
+        if "moe_tp_experts" in ep_plan.values():
+            # with `ep_router`, it used to select masked EP; it now only applies from `tp_plan`
+            raise ValueError(
+                "`moe_tp_experts` is a tensor-parallel style: keep it in `tp_plan`, or name the experts "
+                '`ep_dispatch_experts` in `ep_plan`. `DistributedConfig(ep_implementation="all_reduce")` gives the '
+                "masking and all-reduce the old `ep_router` + `moe_tp_experts` plan did."
+            )
 
         # EP rules take precedence: drop TP rules on EP modules and their children.
         is_expert = re.compile(rf"(?:{'|'.join(map(re.escape, ep_plan))})(?:\..+)?").fullmatch
