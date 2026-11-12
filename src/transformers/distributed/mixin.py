@@ -269,7 +269,6 @@ class DistributedMixin:
                 '`DistributedConfig(ep_implementation="all_reduce")` gives the same masking and all-reduce.'
             )
         if "moe_tp_experts" in ep_plan.values():
-            # with `ep_router`, it used to select masked EP; it now only applies from `tp_plan`
             raise ValueError(
                 "`moe_tp_experts` is a tensor-parallel style: keep it in `tp_plan`, or name the experts "
                 '`ep_dispatch_experts` in `ep_plan`. `DistributedConfig(ep_implementation="all_reduce")` gives the '
