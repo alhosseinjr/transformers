@@ -162,6 +162,25 @@ class TestTensorParallelProperties(TestCasePlus):
         model.tp_plan = {"model.layers.*.self_attn.q_proj": "colwise"}
         self.assertEqual(model.tp_plan, {"model.layers.*.self_attn.q_proj": "colwise"})
 
+    @parameterized.expand([("ep_router", "model.layers.*.mlp.gate"), ("moe_tp_experts", "model.layers.*.mlp.experts")])
+    def test_legacy_masked_ep_plan_is_refused(self, style, module):
+        """The old masked EP plan (`ep_router` with `moe_tp_experts` in `ep_plan`) raises with the migration, instead of
+        leaving the experts unsharded."""
+        from transformers import MixtralConfig, MixtralForCausalLM
+
+        config = MixtralConfig(
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            vocab_size=64,
+            num_local_experts=4,
+        )
+        model = MixtralForCausalLM(config)
+        with self.assertRaisesRegex(ValueError, "ep_dispatch_experts"):
+            model._resolve_parallel_plans(DistributedConfig(tp_size=2, ep_size=2, ep_plan={module: style}))
+
     def test_post_init_keeps_class_level_plans(self):
         """Class-level plans (e.g. `lm_head` on ForCausalLM classes) must survive post_init alongside the base model plan."""
         model_id = "hf-internal-testing/tiny-random-LlamaForCausalLM"

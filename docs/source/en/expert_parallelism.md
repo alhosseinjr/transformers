@@ -174,17 +174,17 @@ These configurations each use eight GPUs:
 
 | Configuration | Result |
 | :--- | :--- |
-| `DistributedConfig(tp_size=4, fsdp_size=2, ep_size=4)` | Each TP group of four shares one batch. Training dispatches tokens, each rank taking a quarter of the batch; inference uses `"all_reduce"`; `ep_implementation="all_reduce"` uses it throughout. |
+| `DistributedConfig(tp_size=4, fsdp_size=2, ep_size=4)` | Each TP group of four shares one batch. Training dispatches tokens, each rank taking a quarter of the batch; inference uses `"all_reduce"`; setting `ep_implementation="all_reduce"` uses it throughout. |
 | `DistributedConfig(tp_size=1, fsdp_size=8, ep_size=4)` | Dispatch with an independent batch on each rank, no slicing, and experts FSDP-sharded across pairs of ranks. |
 | `DistributedConfig(tp_size=2, fsdp_size=4, ep_size=4)` | Dispatch with a TP pair per batch, each pair slicing its batch in two; two batches per expert group. |
-| `DistributedConfig(tp_size=8, ep_size=8)` | Every rank shares one batch. Training dispatches tokens, each rank taking an eighth of the batch; inference uses `"all_reduce"`; `ep_implementation="all_reduce"` uses it throughout. |
+| `DistributedConfig(tp_size=8, ep_size=8)` | Every rank shares one batch. Training dispatches tokens, each rank taking an eighth of the batch; inference uses `"all_reduce"`; setting `ep_implementation="all_reduce"` uses it throughout. |
 
 > [!WARNING]
 > The [`Trainer`] does not account for token dispatch yet: batch and token counting assume the all-reduce layout, where the ranks of a TP group share a batch and `fsdp_size` data-parallel shards exist. Trainer support for dispatch comes in a follow-up.
 
 ## Combining with FSDP2
 
-Tensor and expert parallelism shard the weights across `tp`, but the optimizer state and the modules without a rule are still replicated on every rank of the group, which limits how large a model you can train. Add [FSDP2](./fsdp) on a second mesh dimension with `fsdp_size`. With masking and all-reduce, keep `ep_size=tp_size` and pass `ep_implementation="all_reduce"`.
+Tensor and expert parallelism shard the weights across their own meshes, `tp` and `ep`, but the optimizer state and the modules without a rule are still replicated on every rank of the group, which limits how large a model you can train. Add [FSDP2](./fsdp) on a second mesh dimension with `fsdp_size`. With masking and all-reduce, keep `ep_size=tp_size` and pass `ep_implementation="all_reduce"`.
 
 ```py
 from transformers import AutoModelForCausalLM
